@@ -1,0 +1,14 @@
+[package]
+name = "sembra"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.3", features = ["derive"] }
+image = "0.24"
+ndarray = "0.15"
+ndarray-npy = "0.9"  # for optional .npy loading/saving if needed
+
+# Make the debug build faster
+[profile.dev]
+opt-level = 1
