@@ -36,16 +36,18 @@ Generally speaking, you get the best results if you go smaller. It is quite impr
 how well this works. Here is an example of resizing a rectangular image down into a
 square:
 
-<div style="display: flex; gap: 20px; justify-content: center;">
-  <div>
-    <img src="nes.jpg" alt="Original">
-    <p align="center">Original 350x500</p>
-  </div>
-  <div>
-    <img src="nes_small_square.jpg" alt="Resized smaller">
-    <p align="center">Reduced 350x350</p>
-  </div>
-</div>
+<table>
+  <tr>
+    <td>
+      <img src="nes.jpg" alt="Original">
+      <p align="center">Original 350x500</p>
+    </td>
+    <td>
+      <img src="nes_small_square.jpg" alt="Resized smaller">
+      <p align="center">Reduced 350x350</p>
+    </td>
+  </tr>
+</table>
 
 You can also go bigger, but the results are not as good. Here is an example of the same
 image, but this time we enlarge the width to make it square:
