@@ -54,6 +54,9 @@ $ sembra --input nes.jpg --output nes_big_square.jpg \
   </tr>
 </table>
 
+We turned a rectangular image into a square with very little observable distortion!
+Quite remarkable.
+
 You can also go bigger, but the results are not as good. Here is an example of the same
 image, but this time we enlarge the width to make it square:
 
@@ -75,8 +78,10 @@ $ sembra --input nes.jpg --output nes_big_square.jpg \
   </tr>
 </table>
 
-For comparison, here you can compare the seam-carving enlargement versus what
-you get from a typical image resize:
+While there is clearly some distortion, there is also excellent preservation
+of some of the more detailed parts of the image. This is what seam carving
+gives you. You can see this by comparing the seam-carving enlargement versus what
+you get from a typical image resize (resampling) in an image editor:
 
 <table>
   <tr>
@@ -90,3 +95,7 @@ you get from a typical image resize:
     </td>
   </tr>
 </table>
+
+Side-by-side, you can clearly see that the seam-carving enlargment has preserved
+detail in key area, like faces, fingers, eyxy, and so on. Of course, this comes
+at the cost greater distortion in other less detailed areas.
