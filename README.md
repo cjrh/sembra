@@ -100,6 +100,6 @@ you get from a typical image resize (resampling) in an image editor:
   </tr>
 </table>
 
-Side-by-side, you can clearly see that the seam-carving enlargment has preserved
+Side-by-side, you can clearly see (may need to zoom the page) that the seam-carving enlargment has preserved
 detail in key areas, like faces, fingers, eyes, and so on. Of course, this comes
 at the cost greater distortion in other less detailed areas.
