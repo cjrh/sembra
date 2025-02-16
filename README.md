@@ -4,9 +4,13 @@ Seam carving: content-aware image resizing.
 
 ## About
 
-Translated from the Python code here:
+Seam carving is a content-aware image resizing technique that resizes an image by
+removing or adding pixels in the least noticeable areas. The technique was first
+developed by [Shai Avidan and Ariel Shamir in 2007](https://dl.acm.org/doi/abs/10.1145/1275808.1276390). 
+The technique was later improved by [Michael Rubinstein, Ariel Shamir, and Shai Avidan in 2008](https://dl.acm.org/doi/abs/10.1145/1360612.1360615).
 
-https://github.com/li-plus/seam-carving
+The rust code in this repository is a port of the [Python code](https://github.com/li-plus/seam-carving) by [Jiahao Li](https://liplus.me/).
+Fun fact, the port was done by the o1 model from OpenAI. It was nearly correct, and only two small bugs required fixing.
 
 ## CLI Usage
 
@@ -34,7 +38,7 @@ Options:
 
 Generally speaking, you get the best results if you go smaller. It is quite impressive
 how well this works. Here is an example of resizing a rectangular image down into a
-square:
+square. We'll use the famous painting <em>Nymphs and Satyr (1873)</em> by William-Adolphe Bouguereau:
 
 ```bash
 $ sembra --input nes.jpg --output nes_big_square.jpg \
@@ -45,7 +49,7 @@ $ sembra --input nes.jpg --output nes_big_square.jpg \
   <tr>
     <td>
       <img src="nes.jpg" alt="Original">
-      <p align="center">Original 350x500, <em>Nymphs and Satyr</em>, 1873, William-Adolphe Bouguereau</p>
+      <p align="center">Original 350x500</p>
     </td>
     <td>
       <img src="nes_small_square.jpg" alt="Resized smaller">
