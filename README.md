@@ -36,6 +36,11 @@ Generally speaking, you get the best results if you go smaller. It is quite impr
 how well this works. Here is an example of resizing a rectangular image down into a
 square:
 
+```bash
+$ sembra --input nes.jpg --output nes_big_square.jpg \
+    --width 350 --height 350 --energy-mode forward
+```
+
 <table>
   <tr>
     <td>
@@ -52,28 +57,36 @@ square:
 You can also go bigger, but the results are not as good. Here is an example of the same
 image, but this time we enlarge the width to make it square:
 
-<div style="display: flex; gap: 20px; justify-content: center;">
-  <div>
-    <img src="nes.jpg" alt="Original" style="width: 300px;">
-    <p align="center">Original 350x500</p>
-  </div>
-  <div>
-    <img src="nes_big_square.jpg" alt="Resized larger">
-    <p align="center">Enlarged 500x500</p>
-  </div>
-</div>
+```bash
+$ sembra --input nes.jpg --output nes_big_square.jpg \
+    --width 500 --height 500 --energy-mode forward
+```
+
+<table>
+  <tr>
+    <td>
+      <img src="nes.jpg" alt="Original">
+      <p align="center">Original 350x500</p>
+    </td>
+    <td>
+      <img src="nes_big_square.jpg" alt="Resized larger">
+      <p align="center">Enlarged 500x500</p>
+    </td>
+  </tr>
+</table>
 
 For comparison, here you can compare the seam-carving enlargement versus what
 you get from a typical image resize:
 
-<div style="display: flex; gap: 20px; justify-content: center;">
-  <div>
-    <img src="nes_big_square.jpg" alt="Original">
-    <p align="center">Seam-carved up 500x500</p>
-  </div>
-  <div>
-    <img src="nes-gimp-500.jpg" alt="Resized larger">
-    <p align="center">Resampling 500x500</p>
-  </div>
-</div>
-
+<table>
+  <tr>
+    <td>
+      <img src="nes_big_square.jpg" alt="Original">
+      <p align="center">Seam-carved up 500x500</p>
+    </td>
+    <td>
+      <img src="nes-gimp-500.jpg" alt="Resized larger">
+      <p align="center">Resampling 500x500</p>
+    </td>
+  </tr>
+</table>
