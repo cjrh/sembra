@@ -45,7 +45,7 @@ $ sembra --input nes.jpg --output nes_big_square.jpg \
   <tr>
     <td>
       <img src="nes.jpg" alt="Original">
-      <p align="center">Original 350x500</p>
+      <p align="center">Original 350x500, <em>Nymphs and Satyr</em>, 1873, William-Adolphe Bouguereau</p>
     </td>
     <td>
       <img src="nes_small_square.jpg" alt="Resized smaller">
@@ -97,5 +97,5 @@ you get from a typical image resize (resampling) in an image editor:
 </table>
 
 Side-by-side, you can clearly see that the seam-carving enlargment has preserved
-detail in key area, like faces, fingers, eyxy, and so on. Of course, this comes
+detail in key areas, like faces, fingers, eyes, and so on. Of course, this comes
 at the cost greater distortion in other less detailed areas.
