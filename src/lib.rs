@@ -329,7 +329,7 @@ pub fn resize(image: Array3<f32>, config: ResizeConfig) -> Result<Array3<f32>, S
 fn rgb_to_gray(arr: &Array3<f32>) -> Array2<f32> {
     let (h, w, c) = arr.dim();
     if c == 1 {
-        return arr.index_axis(Axis(2), 0).to_owned();
+        arr.index_axis(Axis(2), 0).to_owned()
     } else {
         let mut gray = Array2::<f32>::zeros((h, w));
         // Weighted sum: 0.2125R + 0.7154G + 0.0721B
@@ -370,8 +370,7 @@ fn get_energy_backward(gray: &Array2<f32>) -> Array2<f32> {
 fn remove_seam_2d(arr: &Array2<f32>, seam: &[usize]) -> Array2<f32> {
     let (h, w) = arr.dim();
     let mut out = Array2::<f32>::zeros((h, w-1));
-    for r in 0..h {
-        let c = seam[r];
+    for (r, &c) in seam.iter().enumerate().take(h) {
         out.slice_mut(s![r, 0..c]).assign(&arr.slice(s![r, 0..c]));
         out.slice_mut(s![r, c..]).assign(&arr.slice(s![r, c+1..]));
     }
@@ -383,8 +382,7 @@ fn remove_seam_2d(arr: &Array2<f32>, seam: &[usize]) -> Array2<f32> {
 fn remove_seam_3d(arr: &Array3<f32>, seam: &[usize]) -> Array3<f32> {
     let (h, w, c) = arr.dim();
     let mut out = Array3::<f32>::zeros((h, w-1, c));
-    for r in 0..h {
-        let cidx = seam[r];
+    for (r, &cidx) in seam.iter().enumerate().take(h) {
         out.slice_mut(s![r, 0..cidx, ..])
             .assign(&arr.slice(s![r, 0..cidx, ..]));
         out.slice_mut(s![r, cidx.., ..])
@@ -568,8 +566,7 @@ fn seam_to_mask(arr: &Array2<f32>, seam: &[usize]) -> Array2<bool> {
 fn remove_seam_2d_usize(arr: &Array2<usize>, seam: &[usize]) -> Array2<usize> {
     let (h, w) = arr.dim();
     let mut out = Array2::<usize>::zeros((h, w-1));
-    for r in 0..h {
-        let c = seam[r];
+    for (r, &c) in seam.iter().enumerate().take(h) {
         out.slice_mut(s![r, 0..c]).assign(&arr.slice(s![r, 0..c]));
         out.slice_mut(s![r, c..]).assign(&arr.slice(s![r, c+1..]));
     }
@@ -720,7 +717,7 @@ fn resize_width(
 ) -> Array3<f32> {
     let (_, w, _) = src.dim();
     if new_width == w {
-        return src.clone();
+        src.clone()
     } else if new_width < w {
         let delta = w - new_width;
         reduce_width(src, delta, energy_mode, aux_energy)
@@ -744,6 +741,7 @@ fn resize_height(
 }
 
 /// Top-level seam carving resize implementation.
+#[allow(clippy::too_many_arguments)]
 fn seamcarve_resize(
     src: &Array3<f32>,
     width: Option<usize>,

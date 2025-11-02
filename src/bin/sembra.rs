@@ -1,5 +1,4 @@
 use clap::Parser;
-use image;
 use sembra::{
     resize, ResizeConfig, EnergyMode, ResizeOrder,
     image_to_ndarray, ndarray_to_image, image_to_bool_mask
