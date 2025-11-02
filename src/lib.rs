@@ -14,12 +14,11 @@
 //! ## Example
 //!
 //! ```no_run
-//! use sembra::{resize, ResizeConfig, EnergyMode, ResizeOrder, image_to_ndarray, ndarray_to_image};
+//! use sembra::{resize, ResizeConfig, EnergyMode, ResizeOrder};
 //! use image;
 //!
 //! // Load an image
 //! let img = image::open("input.jpg").unwrap();
-//! let arr = image_to_ndarray(&img);
 //!
 //! // Configure resize
 //! let config = ResizeConfig {
@@ -33,11 +32,10 @@
 //! };
 //!
 //! // Perform seam carving
-//! let resized = resize(arr, config).unwrap();
+//! let resized = resize(img, config).unwrap();
 //!
-//! // Convert back to image
-//! let output = ndarray_to_image(&resized);
-//! output.save("output.jpg").unwrap();
+//! // Save the result
+//! resized.save("output.jpg").unwrap();
 //! ```
 
 use image::{DynamicImage, RgbImage, Rgb};
@@ -139,20 +137,8 @@ impl Default for ResizeConfig {
 }
 
 /// Convert an image from the `image` crate to an ndarray (f32, range 0-255).
-///
-/// The resulting array has shape (height, width, 3) for RGB images.
-///
-/// # Example
-///
-/// ```no_run
-/// use image;
-/// use sembra::image_to_ndarray;
-///
-/// let img = image::open("photo.jpg").unwrap();
-/// let arr = image_to_ndarray(&img);
-/// println!("Image shape: {:?}", arr.dim());
-/// ```
-pub fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
+/// Internal function for converting DynamicImage to Array3<f32>.
+fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
     let rgb_img = img.to_rgb8();
     let (width, height) = rgb_img.dimensions();
     let mut arr = Array3::<f32>::zeros((height as usize, width as usize, 3));
@@ -165,21 +151,9 @@ pub fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
     arr
 }
 
-/// Convert an ndarray back into an RgbImage for saving.
-///
-/// The input array must have shape (height, width, 3). Values are clamped to 0-255.
-///
-/// # Example
-///
-/// ```no_run
-/// use sembra::ndarray_to_image;
-/// use ndarray::Array3;
-///
-/// let arr = Array3::<f32>::zeros((100, 100, 3));
-/// let img = ndarray_to_image(&arr);
-/// img.save("output.jpg").unwrap();
-/// ```
-pub fn ndarray_to_image(arr: &Array3<f32>) -> RgbImage {
+/// Convert an ndarray back into an RgbImage.
+/// Internal function for converting Array3<f32> to RgbImage.
+fn ndarray_to_image(arr: &Array3<f32>) -> RgbImage {
     let (h, w, c) = arr.dim();
     assert_eq!(c, 3, "Expect 3 channels for RGB image");
     let mut img_buf = RgbImage::new(w as u32, h as u32);
@@ -213,7 +187,7 @@ pub fn image_to_bool_mask(img: &DynamicImage) -> Array2<bool> {
 ///
 /// # Arguments
 ///
-/// * `image` - Input image as Array3<f32> with shape (height, width, 3)
+/// * `image` - Input image (takes ownership)
 /// * `config` - Configuration specifying target dimensions, energy mode, masks, etc.
 ///
 /// # Returns
@@ -232,21 +206,24 @@ pub fn image_to_bool_mask(img: &DynamicImage) -> Array2<bool> {
 ///
 /// ```no_run
 /// use sembra::{resize, ResizeConfig, EnergyMode, ResizeOrder};
-/// use ndarray::Array3;
+/// use image;
 ///
-/// let image = Array3::<f32>::zeros((100, 150, 3));
+/// let img = image::open("input.jpg").unwrap();
 /// let config = ResizeConfig {
-///     width: Some(100),
-///     height: Some(80),
+///     width: Some(400),
+///     height: Some(300),
 ///     ..Default::default()
 /// };
 ///
-/// let resized = resize(image, config).unwrap();
-/// assert_eq!(resized.dim(), (80, 100, 3));
+/// let resized = resize(img, config).unwrap();
+/// resized.save("output.jpg").unwrap();
 /// ```
-pub fn resize(image: Array3<f32>, config: ResizeConfig) -> Result<Array3<f32>, SeamCarvingError> {
+pub fn resize(image: DynamicImage, config: ResizeConfig) -> Result<DynamicImage, SeamCarvingError> {
+    // Convert to ndarray for processing
+    let image_array = image_to_ndarray(&image);
+
     // Validate inputs
-    let (h, w, c) = image.dim();
+    let (h, w, c) = image_array.dim();
 
     if h == 0 || w == 0 || c == 0 {
         return Err(SeamCarvingError::InvalidImageDimensions {
@@ -309,8 +286,8 @@ pub fn resize(image: Array3<f32>, config: ResizeConfig) -> Result<Array3<f32>, S
         ResizeOrder::HeightFirst => "height-first",
     };
 
-    Ok(seamcarve_resize(
-        &image,
+    let resized_array = seamcarve_resize(
+        &image_array,
         config.width,
         config.height,
         energy_mode_str,
@@ -318,7 +295,11 @@ pub fn resize(image: Array3<f32>, config: ResizeConfig) -> Result<Array3<f32>, S
         config.keep_mask,
         config.drop_mask,
         config.step_ratio,
-    ))
+    );
+
+    // Convert back to DynamicImage
+    let result_image = ndarray_to_image(&resized_array);
+    Ok(DynamicImage::ImageRgb8(result_image))
 }
 
 // ============================================================================
@@ -848,45 +829,54 @@ fn rgb_to_gray_for_aux(_img: &Array3<f32>) -> Array2<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
 
     #[test]
     fn test_resize_same_dimensions() {
-        let img = Array3::<f32>::ones((10, 10, 3));
+        use image::RgbImage;
+        let img = DynamicImage::ImageRgb8(RgbImage::new(10, 10));
         let config = ResizeConfig {
             width: Some(10),
             height: Some(10),
             ..Default::default()
         };
-        let result = resize(img.clone(), config).unwrap();
-        assert_eq!(result.dim(), (10, 10, 3));
+        let result = resize(img, config).unwrap();
+        assert_eq!(result.dimensions(), (10, 10));
     }
 
     #[test]
-    fn test_invalid_dimensions() {
-        let img = Array3::<f32>::zeros((0, 10, 3));
-        let config = ResizeConfig::default();
+    fn test_invalid_target_dimensions() {
+        use image::RgbImage;
+        let img = DynamicImage::ImageRgb8(RgbImage::new(10, 10));
+        let config = ResizeConfig {
+            width: Some(0),
+            ..Default::default()
+        };
         assert!(resize(img, config).is_err());
     }
 
     #[test]
     fn test_invalid_step_ratio() {
-        let img = Array3::<f32>::ones((10, 10, 3));
+        use image::RgbImage;
+        let img = DynamicImage::ImageRgb8(RgbImage::new(10, 10));
         let config = ResizeConfig {
             step_ratio: 0.0,
             ..Default::default()
         };
         assert!(resize(img.clone(), config).is_err());
 
+        let img2 = DynamicImage::ImageRgb8(RgbImage::new(10, 10));
         let config2 = ResizeConfig {
             step_ratio: 1.5,
             ..Default::default()
         };
-        assert!(resize(img, config2).is_err());
+        assert!(resize(img2, config2).is_err());
     }
 
     #[test]
     fn test_mask_size_mismatch() {
-        let img = Array3::<f32>::ones((10, 10, 3));
+        use image::RgbImage;
+        let img = DynamicImage::ImageRgb8(RgbImage::new(10, 10));
         let wrong_mask = Array2::<bool>::default((5, 5));
         let config = ResizeConfig {
             keep_mask: Some(wrong_mask),

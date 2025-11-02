@@ -1,7 +1,8 @@
 use clap::Parser;
+use image::GenericImageView;
 use sembra::{
     resize, ResizeConfig, EnergyMode, ResizeOrder,
-    image_to_ndarray, ndarray_to_image, image_to_bool_mask
+    image_to_bool_mask
 };
 
 /// CLI for seam carving image resizing
@@ -55,8 +56,8 @@ fn main() {
             std::process::exit(1);
         });
 
-    let arr = image_to_ndarray(&input_img);
-    println!("Loaded image: {}x{}", arr.dim().1, arr.dim().0);
+    let (width, height) = input_img.dimensions();
+    println!("Loaded image: {}x{}", width, height);
 
     // Load optional masks
     let keep_mask = cli.keep_mask.as_ref().map(|path| {
@@ -120,20 +121,20 @@ fn main() {
 
     // Perform seam carving
     println!("Processing...");
-    let carved = resize(arr, config)
+    let resized = resize(input_img, config)
         .unwrap_or_else(|e| {
             eprintln!("Error: Seam carving failed: {}", e);
             std::process::exit(1);
         });
 
     // Save result
-    let out_img = ndarray_to_image(&carved);
-    out_img.save(&cli.output)
+    let (out_width, out_height) = resized.dimensions();
+    resized.save(&cli.output)
         .unwrap_or_else(|e| {
             eprintln!("Error: Failed to save output image '{}': {}", cli.output, e);
             std::process::exit(1);
         });
 
     println!("Seam carving complete. Saved to {}", cli.output);
-    println!("Output dimensions: {}x{}", carved.dim().1, carved.dim().0);
+    println!("Output dimensions: {}x{}", out_width, out_height);
 }
