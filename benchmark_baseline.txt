@@ -1,0 +1,143 @@
+    Finished `bench` profile [optimized] target(s) in 0.05s
+     Running benches/seam_carving_bench.rs (/home/caleb/.cargo/build/25/63c374433589ad/release/deps/seam_carving_bench-8f25ad348044eac3)
+Gnuplot not found, using plotters backend
+Benchmarking shrink_width/100x100
+Benchmarking shrink_width/100x100: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 8.1s, enable flat sampling, or reduce sample count to 50.
+Benchmarking shrink_width/100x100: Collecting 100 samples in estimated 8.0992 s (5050 iterations)
+Benchmarking shrink_width/100x100: Analyzing
+shrink_width/100x100    time:   [1.5883 ms 1.5933 ms 1.5996 ms]
+                        change: [-1.9313% -1.2695% -0.7032%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+Benchmarking shrink_width/200x200
+Benchmarking shrink_width/200x200: Warming up for 3.0000 s
+Benchmarking shrink_width/200x200: Collecting 100 samples in estimated 5.6102 s (500 iterations)
+Benchmarking shrink_width/200x200: Analyzing
+shrink_width/200x200    time:   [11.181 ms 11.211 ms 11.243 ms]
+                        change: [-1.1272% -0.7158% -0.2905%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking shrink_width/400x400
+Benchmarking shrink_width/400x400: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 8.5s, or reduce sample count to 50.
+Benchmarking shrink_width/400x400: Collecting 100 samples in estimated 8.5175 s (100 iterations)
+Benchmarking shrink_width/400x400: Analyzing
+shrink_width/400x400    time:   [85.334 ms 85.544 ms 85.756 ms]
+                        change: [-0.5615% -0.1433% +0.2658%] (p = 0.50 > 0.05)
+                        No change in performance detected.
+Benchmarking shrink_width/800x600
+Benchmarking shrink_width/800x600: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 42.1s, or reduce sample count to 10.
+Benchmarking shrink_width/800x600: Collecting 100 samples in estimated 42.139 s (100 iterations)
+Benchmarking shrink_width/800x600: Analyzing
+shrink_width/800x600    time:   [420.95 ms 421.65 ms 422.37 ms]
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking expand_width/100x100
+Benchmarking expand_width/100x100: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 8.6s, enable flat sampling, or reduce sample count to 50.
+Benchmarking expand_width/100x100: Collecting 100 samples in estimated 8.6444 s (5050 iterations)
+Benchmarking expand_width/100x100: Analyzing
+expand_width/100x100    time:   [1.7034 ms 1.7077 ms 1.7121 ms]
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+Benchmarking expand_width/200x200
+Benchmarking expand_width/200x200: Warming up for 3.0000 s
+Benchmarking expand_width/200x200: Collecting 100 samples in estimated 5.8557 s (500 iterations)
+Benchmarking expand_width/200x200: Analyzing
+expand_width/200x200    time:   [11.626 ms 11.663 ms 11.699 ms]
+Benchmarking expand_width/400x400
+Benchmarking expand_width/400x400: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 8.4s, or reduce sample count to 50.
+Benchmarking expand_width/400x400: Collecting 100 samples in estimated 8.4448 s (100 iterations)
+Benchmarking expand_width/400x400: Analyzing
+expand_width/400x400    time:   [84.261 ms 84.483 ms 84.709 ms]
+
+Benchmarking shrink_both/100x100
+Benchmarking shrink_both/100x100: Warming up for 3.0000 s
+Benchmarking shrink_both/100x100: Collecting 100 samples in estimated 5.2573 s (1900 iterations)
+Benchmarking shrink_both/100x100: Analyzing
+shrink_both/100x100     time:   [2.7587 ms 2.7677 ms 2.7769 ms]
+Benchmarking shrink_both/200x200
+Benchmarking shrink_both/200x200: Warming up for 3.0000 s
+Benchmarking shrink_both/200x200: Collecting 100 samples in estimated 5.8378 s (300 iterations)
+Benchmarking shrink_both/200x200: Analyzing
+shrink_both/200x200     time:   [19.309 ms 19.361 ms 19.415 ms]
+Benchmarking shrink_both/400x400
+Benchmarking shrink_both/400x400: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 14.3s, or reduce sample count to 30.
+Benchmarking shrink_both/400x400: Collecting 100 samples in estimated 14.328 s (100 iterations)
+Benchmarking shrink_both/400x400: Analyzing
+shrink_both/400x400     time:   [142.91 ms 143.18 ms 143.44 ms]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+Benchmarking energy_modes/backward_energy
+Benchmarking energy_modes/backward_energy: Warming up for 3.0000 s
+Benchmarking energy_modes/backward_energy: Collecting 100 samples in estimated 5.6632 s (500 iterations)
+Benchmarking energy_modes/backward_energy: Analyzing
+energy_modes/backward_energy
+                        time:   [11.267 ms 11.302 ms 11.339 ms]
+Benchmarking energy_modes/forward_energy
+Benchmarking energy_modes/forward_energy: Warming up for 3.0000 s
+Benchmarking energy_modes/forward_energy: Collecting 100 samples in estimated 5.1031 s (900 iterations)
+Benchmarking energy_modes/forward_energy: Analyzing
+energy_modes/forward_energy
+                        time:   [5.6425 ms 5.6611 ms 5.6803 ms]
+
+Benchmarking resize_order/width_first
+Benchmarking resize_order/width_first: Warming up for 3.0000 s
+Benchmarking resize_order/width_first: Collecting 100 samples in estimated 5.8363 s (300 iterations)
+Benchmarking resize_order/width_first: Analyzing
+resize_order/width_first
+                        time:   [19.379 ms 19.435 ms 19.491 ms]
+Benchmarking resize_order/height_first
+Benchmarking resize_order/height_first: Warming up for 3.0000 s
+Benchmarking resize_order/height_first: Collecting 100 samples in estimated 5.7857 s (300 iterations)
+Benchmarking resize_order/height_first: Analyzing
+resize_order/height_first
+                        time:   [19.231 ms 19.290 ms 19.351 ms]
+
+Benchmarking step_ratios/ratio_0.25
+Benchmarking step_ratios/ratio_0.25: Warming up for 3.0000 s
+Benchmarking step_ratios/ratio_0.25: Collecting 100 samples in estimated 5.1566 s (1600 iterations)
+Benchmarking step_ratios/ratio_0.25: Analyzing
+step_ratios/ratio_0.25  time:   [3.2151 ms 3.2261 ms 3.2374 ms]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+Benchmarking step_ratios/ratio_0.5
+Benchmarking step_ratios/ratio_0.5: Warming up for 3.0000 s
+Benchmarking step_ratios/ratio_0.5: Collecting 100 samples in estimated 5.1449 s (2000 iterations)
+Benchmarking step_ratios/ratio_0.5: Analyzing
+step_ratios/ratio_0.5   time:   [2.5694 ms 2.5773 ms 2.5854 ms]
+Benchmarking step_ratios/ratio_0.75
+Benchmarking step_ratios/ratio_0.75: Warming up for 3.0000 s
+Benchmarking step_ratios/ratio_0.75: Collecting 100 samples in estimated 5.1508 s (2000 iterations)
+Benchmarking step_ratios/ratio_0.75: Analyzing
+step_ratios/ratio_0.75  time:   [2.5654 ms 2.5731 ms 2.5808 ms]
+Benchmarking step_ratios/ratio_1
+Benchmarking step_ratios/ratio_1: Warming up for 3.0000 s
+Benchmarking step_ratios/ratio_1: Collecting 100 samples in estimated 5.1664 s (2000 iterations)
+Benchmarking step_ratios/ratio_1: Analyzing
+step_ratios/ratio_1     time:   [2.5676 ms 2.5756 ms 2.5838 ms]
+
+Benchmarking large_reduction/50_percent
+Benchmarking large_reduction/50_percent: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 9.1s or enable flat sampling.
+Benchmarking large_reduction/50_percent: Collecting 10 samples in estimated 9.1387 s (55 iterations)
+Benchmarking large_reduction/50_percent: Analyzing
+large_reduction/50_percent
+                        time:   [165.89 ms 166.40 ms 166.85 ms]
+

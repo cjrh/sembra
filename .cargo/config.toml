@@ -1,0 +1,8 @@
+# Cargo configuration for better profiling support
+# Based on: https://nnethercote.github.io/perf-book/profiling.html
+
+[build]
+rustflags = [
+    "-C", "force-frame-pointers=yes",  # Better stack traces in profilers
+    "-C", "symbol-mangling-version=v0" # Better symbol demangling
+]
