@@ -2,6 +2,20 @@
 name = "sembra"
 version = "0.1.0"
 edition = "2021"
+authors = ["Caleb"]
+description = "Content-aware image resizing using seam carving"
+license = "AGPL-3.0"
+repository = "https://github.com/username/sembra"
+keywords = ["image", "seam-carving", "resize", "content-aware"]
+categories = ["multimedia::images", "algorithms"]
+
+[lib]
+name = "sembra"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sembra"
+path = "src/bin/sembra.rs"
 
 [dependencies]
 clap = { version = "4.3", features = ["derive"] }

@@ -1,57 +1,158 @@
-use clap::Parser;
-use image::{DynamicImage, GenericImageView, ImageBuffer, Luma, Rgb, RgbImage};
-use ndarray::{Array, Array2, Array3, s, stack, Axis, Zip};
-use std::f32::INFINITY;
+//! # Sembra - Content-Aware Image Resizing
+//!
+//! Sembra implements seam carving, an algorithm for content-aware image resizing.
+//! Instead of uniformly scaling, seam carving removes or adds "seams" (paths of pixels)
+//! that have low importance, preserving the more important features of the image.
+//!
+//! ## How It Works
+//!
+//! 1. **Energy calculation**: Determine the importance of each pixel using gradient or forward energy
+//! 2. **Seam finding**: Use dynamic programming to find minimum-energy vertical paths
+//! 3. **Seam removal/insertion**: Remove low-energy seams to shrink, or duplicate them to expand
+//! 4. **Masking**: Optionally protect or target specific regions for removal
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use sembra::{resize, ResizeConfig, EnergyMode, ResizeOrder, image_to_ndarray, ndarray_to_image};
+//! use image;
+//!
+//! // Load an image
+//! let img = image::open("input.jpg").unwrap();
+//! let arr = image_to_ndarray(&img);
+//!
+//! // Configure resize
+//! let config = ResizeConfig {
+//!     width: Some(400),
+//!     height: Some(300),
+//!     energy_mode: EnergyMode::Backward,
+//!     order: ResizeOrder::WidthFirst,
+//!     keep_mask: None,
+//!     drop_mask: None,
+//!     step_ratio: 0.5,
+//! };
+//!
+//! // Perform seam carving
+//! let resized = resize(arr, config).unwrap();
+//!
+//! // Convert back to image
+//! let output = ndarray_to_image(&resized);
+//! output.save("output.jpg").unwrap();
+//! ```
 
+use image::{DynamicImage, RgbImage, Rgb};
+use ndarray::{Array2, Array3, s, Axis, Zip};
+use std::fmt;
 
+// Constants for mask energy values
 const DROP_MASK_ENERGY: f32 = 1e5;
 const KEEP_MASK_ENERGY: f32 = 1e3;
 
-/// CLI for our seam carving demo
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Input image path
-    #[arg(long)]
-    input: String,
-
-    /// Output image path
-    #[arg(long)]
-    output: String,
-
-    /// Target width
-    #[arg(long)]
-    width: Option<usize>,
-
-    /// Target height
-    #[arg(long)]
-    height: Option<usize>,
-
-    /// Energy mode: "backward" or "forward"
-    #[arg(long, default_value="backward")]
-    energy_mode: String,
-
-    /// Order mode: "width-first" or "height-first"
-    #[arg(long, default_value="width-first")]
-    order: String,
-
-    /// Keep mask image path (optional)
-    #[arg(long)]
-    keep_mask: Option<String>,
-
-    /// Drop mask image path (optional)
-    #[arg(long)]
-    drop_mask: Option<String>,
-
-    /// Step ratio for expansions
-    #[arg(long, default_value="0.5")]
-    step_ratio: f32
+/// Errors that can occur during seam carving operations
+#[derive(Debug, Clone)]
+pub enum SeamCarvingError {
+    /// Target dimension is invalid (e.g., zero or larger than reasonable limits)
+    InvalidDimensions { message: String },
+    /// Mask dimensions don't match image dimensions
+    MaskSizeMismatch { expected: (usize, usize), got: (usize, usize) },
+    /// Step ratio is invalid (must be > 0 and <= 1)
+    InvalidStepRatio { value: f32 },
+    /// Image has invalid dimensions for processing
+    InvalidImageDimensions { message: String },
+    /// General processing error
+    ProcessingError { message: String },
 }
 
-/// Convert an image from the `image` crate to an ndarray (f32).
-fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
-    // If the image is already RGB, we can convert it.
-    // If it's grayscale, convert it to 1 channel in an NxMx1 array.
+impl fmt::Display for SeamCarvingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SeamCarvingError::InvalidDimensions { message } => {
+                write!(f, "Invalid dimensions: {}", message)
+            }
+            SeamCarvingError::MaskSizeMismatch { expected, got } => {
+                write!(f, "Mask size mismatch: expected {:?}, got {:?}", expected, got)
+            }
+            SeamCarvingError::InvalidStepRatio { value } => {
+                write!(f, "Invalid step ratio: {} (must be > 0 and <= 1)", value)
+            }
+            SeamCarvingError::InvalidImageDimensions { message } => {
+                write!(f, "Invalid image dimensions: {}", message)
+            }
+            SeamCarvingError::ProcessingError { message } => {
+                write!(f, "Processing error: {}", message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SeamCarvingError {}
+
+/// Energy calculation mode for seam finding
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnergyMode {
+    /// Backward energy: gradient-based (edge detection using Sobel-like filter)
+    Backward,
+    /// Forward energy: removal cost-based (estimates discontinuity after removal)
+    Forward,
+}
+
+/// Order of operations when resizing both width and height
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeOrder {
+    /// Resize width first, then height
+    WidthFirst,
+    /// Resize height first, then width
+    HeightFirst,
+}
+
+/// Configuration for seam carving resize operation
+#[derive(Debug, Clone)]
+pub struct ResizeConfig {
+    /// Target width (None to keep original width)
+    pub width: Option<usize>,
+    /// Target height (None to keep original height)
+    pub height: Option<usize>,
+    /// Energy calculation mode
+    pub energy_mode: EnergyMode,
+    /// Resize order when changing both dimensions
+    pub order: ResizeOrder,
+    /// Optional mask to protect regions (true = keep)
+    pub keep_mask: Option<Array2<bool>>,
+    /// Optional mask to remove regions (true = remove)
+    pub drop_mask: Option<Array2<bool>>,
+    /// Step ratio for expansion (0 < ratio <= 1)
+    pub step_ratio: f32,
+}
+
+impl Default for ResizeConfig {
+    fn default() -> Self {
+        Self {
+            width: None,
+            height: None,
+            energy_mode: EnergyMode::Backward,
+            order: ResizeOrder::WidthFirst,
+            keep_mask: None,
+            drop_mask: None,
+            step_ratio: 0.5,
+        }
+    }
+}
+
+/// Convert an image from the `image` crate to an ndarray (f32, range 0-255).
+///
+/// The resulting array has shape (height, width, 3) for RGB images.
+///
+/// # Example
+///
+/// ```no_run
+/// use image;
+/// use sembra::image_to_ndarray;
+///
+/// let img = image::open("photo.jpg").unwrap();
+/// let arr = image_to_ndarray(&img);
+/// println!("Image shape: {:?}", arr.dim());
+/// ```
+pub fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
     let rgb_img = img.to_rgb8();
     let (width, height) = rgb_img.dimensions();
     let mut arr = Array3::<f32>::zeros((height as usize, width as usize, 3));
@@ -64,8 +165,21 @@ fn image_to_ndarray(img: &DynamicImage) -> Array3<f32> {
     arr
 }
 
-/// Convert an ndarray back into an RgbImage to save.
-fn ndarray_to_rgb_image(arr: &Array3<f32>) -> RgbImage {
+/// Convert an ndarray back into an RgbImage for saving.
+///
+/// The input array must have shape (height, width, 3). Values are clamped to 0-255.
+///
+/// # Example
+///
+/// ```no_run
+/// use sembra::ndarray_to_image;
+/// use ndarray::Array3;
+///
+/// let arr = Array3::<f32>::zeros((100, 100, 3));
+/// let img = ndarray_to_image(&arr);
+/// img.save("output.jpg").unwrap();
+/// ```
+pub fn ndarray_to_image(arr: &Array3<f32>) -> RgbImage {
     let (h, w, c) = arr.dim();
     assert_eq!(c, 3, "Expect 3 channels for RGB image");
     let mut img_buf = RgbImage::new(w as u32, h as u32);
@@ -80,24 +194,141 @@ fn ndarray_to_rgb_image(arr: &Array3<f32>) -> RgbImage {
     img_buf
 }
 
-/// Convert an image into a 2D boolean mask (true/false) of shape (H, W).
-/// If the image is color, we treat non-zero-luma pixels as true.
-fn image_to_bool_mask(img: &DynamicImage) -> Array2<bool> {
+/// Convert an image into a 2D boolean mask (true/false).
+///
+/// Non-zero luminance pixels are treated as true. The resulting mask has shape (height, width).
+pub fn image_to_bool_mask(img: &DynamicImage) -> Array2<bool> {
     let gray = img.to_luma8();
     let (w, h) = gray.dimensions();
     let mut mask = Array2::<bool>::default((h as usize, w as usize));
     for (x, y, pixel) in gray.enumerate_pixels() {
-        // If the grayscale pixel value is > 0, we consider the mask as true
         mask[[y as usize, x as usize]] = pixel[0] > 0;
     }
     mask
 }
 
-/// Convert a 3D ndarray (HWC) to 2D grayscale by a fixed coefficient.
+/// Main seam carving resize function
+///
+/// Resizes an image using the seam carving algorithm with the provided configuration.
+///
+/// # Arguments
+///
+/// * `image` - Input image as Array3<f32> with shape (height, width, 3)
+/// * `config` - Configuration specifying target dimensions, energy mode, masks, etc.
+///
+/// # Returns
+///
+/// Result containing the resized image or an error
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Image dimensions are invalid (zero size)
+/// - Step ratio is not in range (0, 1]
+/// - Mask dimensions don't match image dimensions
+/// - Target dimensions are invalid
+///
+/// # Example
+///
+/// ```no_run
+/// use sembra::{resize, ResizeConfig, EnergyMode, ResizeOrder};
+/// use ndarray::Array3;
+///
+/// let image = Array3::<f32>::zeros((100, 150, 3));
+/// let config = ResizeConfig {
+///     width: Some(100),
+///     height: Some(80),
+///     ..Default::default()
+/// };
+///
+/// let resized = resize(image, config).unwrap();
+/// assert_eq!(resized.dim(), (80, 100, 3));
+/// ```
+pub fn resize(image: Array3<f32>, config: ResizeConfig) -> Result<Array3<f32>, SeamCarvingError> {
+    // Validate inputs
+    let (h, w, c) = image.dim();
+
+    if h == 0 || w == 0 || c == 0 {
+        return Err(SeamCarvingError::InvalidImageDimensions {
+            message: format!("Image has zero dimension: {}x{}x{}", h, w, c),
+        });
+    }
+
+    if config.step_ratio <= 0.0 || config.step_ratio > 1.0 {
+        return Err(SeamCarvingError::InvalidStepRatio {
+            value: config.step_ratio,
+        });
+    }
+
+    // Validate masks if provided
+    if let Some(ref mask) = config.keep_mask {
+        let (mh, mw) = mask.dim();
+        if mh != h || mw != w {
+            return Err(SeamCarvingError::MaskSizeMismatch {
+                expected: (h, w),
+                got: (mh, mw),
+            });
+        }
+    }
+
+    if let Some(ref mask) = config.drop_mask {
+        let (mh, mw) = mask.dim();
+        if mh != h || mw != w {
+            return Err(SeamCarvingError::MaskSizeMismatch {
+                expected: (h, w),
+                got: (mh, mw),
+            });
+        }
+    }
+
+    // Validate target dimensions
+    if let Some(target_w) = config.width {
+        if target_w == 0 {
+            return Err(SeamCarvingError::InvalidDimensions {
+                message: "Target width cannot be zero".to_string(),
+            });
+        }
+    }
+
+    if let Some(target_h) = config.height {
+        if target_h == 0 {
+            return Err(SeamCarvingError::InvalidDimensions {
+                message: "Target height cannot be zero".to_string(),
+            });
+        }
+    }
+
+    // Convert energy mode to string for internal functions
+    let energy_mode_str = match config.energy_mode {
+        EnergyMode::Backward => "backward",
+        EnergyMode::Forward => "forward",
+    };
+
+    let order_str = match config.order {
+        ResizeOrder::WidthFirst => "width-first",
+        ResizeOrder::HeightFirst => "height-first",
+    };
+
+    Ok(seamcarve_resize(
+        &image,
+        config.width,
+        config.height,
+        energy_mode_str,
+        order_str,
+        config.keep_mask,
+        config.drop_mask,
+        config.step_ratio,
+    ))
+}
+
+// ============================================================================
+// Internal implementation (private functions)
+// ============================================================================
+
+/// Convert a 3D ndarray (HWC) to 2D grayscale by weighted coefficients.
 fn rgb_to_gray(arr: &Array3<f32>) -> Array2<f32> {
     let (h, w, c) = arr.dim();
     if c == 1 {
-        // Already grayscale
         return arr.index_axis(Axis(2), 0).to_owned();
     } else {
         let mut gray = Array2::<f32>::zeros((h, w));
@@ -115,16 +346,11 @@ fn rgb_to_gray(arr: &Array3<f32>) -> Array2<f32> {
     }
 }
 
-/// Apply a Sobel filter to compute gradient magnitude as "backward" energy.
-/// We approximate the Sobel by finite differences in X and Y, for simplicity.
+/// Apply a Sobel-like filter to compute gradient magnitude as "backward" energy.
 fn get_energy_backward(gray: &Array2<f32>) -> Array2<f32> {
     let (h, w) = gray.dim();
     let mut energy = Array2::<f32>::zeros((h, w));
 
-    // For each pixel, approximate the gradient in x and y:
-    //   grad_x ~ gray(y, x+1) - gray(y, x-1)
-    //   grad_y ~ gray(y+1, x) - gray(y-1, x)
-    // Then energy = |grad_x| + |grad_y|
     for y in 0..h {
         for x in 0..w {
             let left   = if x == 0 { gray[[y, x]] } else { gray[[y, x-1]] };
@@ -140,43 +366,37 @@ fn get_energy_backward(gray: &Array2<f32>) -> Array2<f32> {
     energy
 }
 
-/// Remove one vertical seam from a 2D image (or mask) according to a given seam path.
-/// The seam array is length H, seam[r] = c in [0, W-1].
+/// Remove one vertical seam from a 2D array according to a given seam path.
 fn remove_seam_2d(arr: &Array2<f32>, seam: &[usize]) -> Array2<f32> {
     let (h, w) = arr.dim();
     let mut out = Array2::<f32>::zeros((h, w-1));
     for r in 0..h {
         let c = seam[r];
-        // Copy everything to the left
         out.slice_mut(s![r, 0..c]).assign(&arr.slice(s![r, 0..c]));
-        // Copy everything to the right
         out.slice_mut(s![r, c..]).assign(&arr.slice(s![r, c+1..]));
     }
     out
 }
 
 /// Remove one vertical seam from a 3D image (HWC).
+#[allow(dead_code)]
 fn remove_seam_3d(arr: &Array3<f32>, seam: &[usize]) -> Array3<f32> {
     let (h, w, c) = arr.dim();
     let mut out = Array3::<f32>::zeros((h, w-1, c));
     for r in 0..h {
         let cidx = seam[r];
-        // left side
         out.slice_mut(s![r, 0..cidx, ..])
             .assign(&arr.slice(s![r, 0..cidx, ..]));
-        // right side
         out.slice_mut(s![r, cidx.., ..])
             .assign(&arr.slice(s![r, cidx+1.., ..]));
     }
     out
 }
 
-/// Get the minimum vertical seam (backward-energy).
-/// We'll do a dynamic programming approach reminiscent of the Python code.
+/// Get the minimum vertical seam using backward energy with dynamic programming.
 fn get_min_seam_backward(energy: &Array2<f32>) -> Vec<usize> {
     let (h, w) = energy.dim();
-    let mut dp = energy.clone(); // cost so far
-    // parent array (h x w), each entry holds the column index from the previous row
+    let mut dp = energy.clone();
     let mut parent = Array2::<i32>::zeros((h, w));
 
     // Forward accumulate
@@ -198,7 +418,7 @@ fn get_min_seam_backward(energy: &Array2<f32>) -> Vec<usize> {
     }
 
     // Find global min in bottom row
-    let mut last_row_min = dp.slice(s![-1, ..]).indexed_iter()
+    let last_row_min = dp.slice(s![-1, ..]).indexed_iter()
         .fold((0, f32::MAX), |acc, x| {
             if *x.1 < acc.1 { (x.0, *x.1) } else { acc }
         });
@@ -214,26 +434,14 @@ fn get_min_seam_backward(energy: &Array2<f32>) -> Vec<usize> {
     seam
 }
 
-/// Simple cost function for "forward" energy:
-/// We'll approximate the cost based on pixel differences that occur when removing a pixel.
-/// This is a simplified approach, analogous to the Python code’s forward method.
+/// Get the minimum vertical seam using forward energy.
 fn get_min_seam_forward(gray: &Array2<f32>) -> Vec<usize> {
     let (h, w) = gray.dim();
-    // dp: running cost; parent: storing predecessor column
     let mut dp = Array2::<f32>::zeros((h, w));
     let mut parent = Array2::<i32>::zeros((h, w));
 
-    // First row has cost = 0
-    // Fill with 0
-    // We approximate the cost from the second row downward
     for r in 1..h {
         for c in 0..w {
-            // We'll define 3 possible choices from row-1: (c-1, c, c+1)
-            // cost is difference if we remove (r,c):
-            //   cost_mid = |gray[r, c+1] - gray[r, c-1]| (with clamp)
-            // plus possibly difference with the row above
-
-            // We do a small clamp for c-1, c+1
             let c_left = if c == 0 { c } else { c - 1 };
             let c_right = if c == w-1 { c } else { c + 1 };
 
@@ -244,7 +452,6 @@ fn get_min_seam_forward(gray: &Array2<f32>) -> Vec<usize> {
             let mut best_cost = dp[[r-1, c]];
             let mut best_parent = c as i32;
 
-            // check c-1
             if c > 0 {
                 let cost = dp[[r-1, c-1]] + mid_cost;
                 if cost < best_cost {
@@ -252,7 +459,6 @@ fn get_min_seam_forward(gray: &Array2<f32>) -> Vec<usize> {
                     best_parent = (c - 1) as i32;
                 }
             }
-            // check c+1
             if c < w-1 {
                 let cost = dp[[r-1, c+1]] + mid_cost;
                 if cost < best_cost {
@@ -275,7 +481,7 @@ fn get_min_seam_forward(gray: &Array2<f32>) -> Vec<usize> {
         }
     }
 
-    // trace up
+    // Trace up
     let mut seam = vec![0usize; h];
     seam[h-1] = min_idx;
     for r in (0..(h-1)).rev() {
@@ -287,10 +493,7 @@ fn get_min_seam_forward(gray: &Array2<f32>) -> Vec<usize> {
     seam
 }
 
-/// Remove N seams from an image in "backward" or "forward" mode.
-/// Returns a boolean mask of shape (H, W) indicating where the seams were removed.
-///
-/// This is a simplified approach that removes seams one at a time.
+/// Find and mark N seams for removal, returning a boolean mask.
 fn get_seams(
     gray: &Array2<f32>,
     num_seams: usize,
@@ -298,66 +501,50 @@ fn get_seams(
     aux_energy: &mut Option<Array2<f32>>,
 ) -> Array2<bool> {
     let (h, w) = gray.dim();
-    // We'll mark removed seams in a boolean array
     let mut removed = Array2::<bool>::from_elem((h, w), false);
-    // We'll copy the working arrays
     let mut working_gray = gray.clone();
-    let mut idx_map = Array2::<usize>::from_shape_fn((h, w), |(r, c)| c);
+    let mut idx_map = Array2::<usize>::from_shape_fn((h, w), |(_r, c)| c);
 
     if let Some(aux) = aux_energy {
-        // Add inside get_seams
         Zip::from(&mut working_gray)
             .and(aux)
-            .apply(|g, aux_val| {
+            .for_each(|g, aux_val| {
                 *g += *aux_val;
             });
     }
 
     let mut cur_w = w;
     for _ in 0..num_seams {
-        // 1) find seam
         let seam = match energy_mode {
             "backward" => get_min_seam_backward(&working_gray),
             "forward" => get_min_seam_forward(&working_gray),
             _ => panic!("Unsupported energy mode"),
         };
 
-        // 2) Mark in the removed array
         for r in 0..h {
             let c = idx_map[[r, seam[r]]];
             removed[[r, c]] = true;
         }
 
-        // 3) remove from working_gray
-        let seam_mask = seam_to_mask(&working_gray, &seam);
+        let _seam_mask = seam_to_mask(&working_gray, &seam);
         working_gray = remove_seam_2d(&working_gray, &seam);
         idx_map = remove_seam_2d_usize(&idx_map, &seam);
 
-        // also remove from aux if needed
         if let Some(ref mut aux) = aux_energy {
             *aux = remove_seam_2d(aux, &seam);
         }
 
         cur_w -= 1;
 
-        // We can optionally re-calculate local energy for the bounding region of the removed seam,
-        // but for simplicity, we'll just recalc the entire (smaller) image from scratch each time.
         if cur_w > 1 {
             match energy_mode {
                 "backward" => {
                     working_gray = get_energy_backward(&working_gray);
-                    // Add aux again
                     if let Some(ref aux) = aux_energy {
-                        Zip::from(&mut working_gray).and(aux).apply(|g, &x| *g += x);
+                        Zip::from(&mut working_gray).and(aux).for_each(|g, &x| *g += x);
                     }
                 },
-                "forward" => {
-                    // For forward, the "working_gray" is the original grayscale, but we need
-                    // to remove the seam from the original grayscale as well. Let's do that
-                    // just once outside. We do a simpler approach here: re-construct from
-                    // the smaller array. (In a real version, we'd keep track of the original
-                    // gray.)
-                },
+                "forward" => {},
                 _ => {}
             }
         }
@@ -366,7 +553,7 @@ fn get_seams(
     removed
 }
 
-/// Convert a seam (vertical indices) into a boolean mask (H, W).
+/// Convert a seam path to a boolean mask.
 fn seam_to_mask(arr: &Array2<f32>, seam: &[usize]) -> Array2<bool> {
     let (h, w) = arr.dim();
     let mut mask = Array2::<bool>::from_elem((h, w), false);
@@ -377,7 +564,7 @@ fn seam_to_mask(arr: &Array2<f32>, seam: &[usize]) -> Array2<bool> {
     mask
 }
 
-/// Remove a seam in an Array2<usize> (similar to remove_seam_2d for i32/f32).
+/// Remove a seam from an Array2<usize>.
 fn remove_seam_2d_usize(arr: &Array2<usize>, seam: &[usize]) -> Array2<usize> {
     let (h, w) = arr.dim();
     let mut out = Array2::<usize>::zeros((h, w-1));
@@ -389,7 +576,7 @@ fn remove_seam_2d_usize(arr: &Array2<usize>, seam: &[usize]) -> Array2<usize> {
     out
 }
 
-/// Reduce width by removing `delta_width` seams.
+/// Reduce width by removing seams.
 fn reduce_width(
     src: &Array3<f32>,
     delta_width: usize,
@@ -400,10 +587,8 @@ fn reduce_width(
     assert!(delta_width <= w, "Cannot reduce more than current width!");
     let gray = rgb_to_gray(src);
 
-    // Mark which seams to remove
     let removed_mask = get_seams(&gray, delta_width, energy_mode, aux_energy);
 
-    // Now build the new image by skipping removed columns
     let new_w = w - delta_width;
     let mut out = Array3::<f32>::zeros((h, new_w, c));
     for r in 0..h {
@@ -434,19 +619,15 @@ fn transpose_3d(arr: &Array3<f32>) -> Array3<f32> {
     out
 }
 
-/// Insert N seams into an image, each seam will be duplicated (with an average in-between).
-/// This is a simplified version of "inserting multiple seams" as in Python code.
+/// Insert seams into an image by duplicating them.
 fn insert_seams(
     src: &Array3<f32>,
     seams: &Array2<bool>,
     delta_width: usize
 ) -> Array3<f32> {
-    // We'll create (W + delta_width) columns.
     let (h, w, c) = src.dim();
     let new_w = w + delta_width;
     let mut out = Array3::<f32>::zeros((h, new_w, c));
-    // Because we are not storing "which" seam belongs where for multiple seams, we do
-    // a naive approach: For each row, if `seams[[row, col]]` is true, we duplicate that pixel.
 
     for row in 0..h {
         let mut dst_col = 0;
@@ -462,7 +643,7 @@ fn insert_seams(
                 }
                 dst_col += 1;
             }
-            // Now copy the original
+            // Copy the original
             for ch in 0..c {
                 out[[row, dst_col, ch]] = src[[row, col, ch]];
             }
@@ -488,17 +669,14 @@ fn expand_width(
         let max_step = ((w as f32) * step_ratio).round().max(1.0) as usize;
         let step_size = max_step.min(to_expand);
 
-        // We'll find `step_size` seams in the current image
         let gray = rgb_to_gray(&out_img);
-        let (h, cur_w) = gray.dim();
         let removed_mask = get_seams(&gray, step_size, energy_mode, aux_energy);
 
-        // Instead of removing them, we "insert" by duplicating seams
         let inserted = insert_seams(&out_img, &removed_mask, step_size);
         out_img = inserted;
-        // Expand aux_energy likewise
+
         if let Some(ref mut aux) = aux_energy {
-            let mut new_aux = insert_seams_2d(aux, &removed_mask, step_size);
+            let new_aux = insert_seams_2d(aux, &removed_mask, step_size);
             *aux = new_aux;
         }
         to_expand -= step_size;
@@ -506,7 +684,7 @@ fn expand_width(
     out_img
 }
 
-/// Insert seams in a 2D array in sync with `insert_seams` for a 3D image.
+/// Insert seams in a 2D array.
 fn insert_seams_2d(
     arr2d: &Array2<f32>,
     seams: &Array2<bool>,
@@ -519,7 +697,6 @@ fn insert_seams_2d(
         let mut dst_col = 0;
         for col in 0..w {
             if seams[[row, col]] {
-                // Insert average
                 let left = if col > 0 { arr2d[[row, col-1]] }
                            else { arr2d[[row, col]] };
                 let right = arr2d[[row, col]];
@@ -533,7 +710,7 @@ fn insert_seams_2d(
     out
 }
 
-/// Resize image width to target: either reduce or expand.
+/// Resize image width to target.
 fn resize_width(
     src: &Array3<f32>,
     new_width: usize,
@@ -541,15 +718,13 @@ fn resize_width(
     aux_energy: &mut Option<Array2<f32>>,
     step_ratio: f32
 ) -> Array3<f32> {
-    let (h, w, c) = src.dim();
+    let (_, w, _) = src.dim();
     if new_width == w {
         return src.clone();
     } else if new_width < w {
-        // reduce
         let delta = w - new_width;
         reduce_width(src, delta, energy_mode, aux_energy)
     } else {
-        // expand
         let delta = new_width - w;
         expand_width(src, delta, energy_mode, aux_energy, step_ratio)
     }
@@ -563,15 +738,12 @@ fn resize_height(
     aux_energy: &mut Option<Array2<f32>>,
     step_ratio: f32
 ) -> Array3<f32> {
-    // Transpose (H, W, C) -> (W, H, C)
     let t = transpose_3d(src);
-    // Now "width" is the old "height"
     let resized = resize_width(&t, new_height, energy_mode, aux_energy, step_ratio);
-    // Transpose back
     transpose_3d(&resized)
 }
 
-/// The top-level "resize" function analogous to Python code:
+/// Top-level seam carving resize implementation.
 fn seamcarve_resize(
     src: &Array3<f32>,
     width: Option<usize>,
@@ -582,20 +754,18 @@ fn seamcarve_resize(
     drop_mask: Option<Array2<bool>>,
     step_ratio: f32
 ) -> Array3<f32> {
-    // If keep_mask or drop_mask are given, we store them in an aux_energy array:
-    //  +KEEP_MASK_ENERGY for keep_mask
-    //  -DROP_MASK_ENERGY for drop_mask
-    let (h, w, _c) = src.dim();
+    let (h, w, _) = src.dim();
     let mut aux_energy: Option<Array2<f32>> = None;
+
     if keep_mask.is_some() || drop_mask.is_some() {
         let mut aux = Array2::<f32>::zeros((h, w));
         if let Some(ref km) = keep_mask {
-            Zip::from(&mut aux).and(km).apply(|a, &m| {
+            Zip::from(&mut aux).and(km).for_each(|a, &m| {
                 if m { *a += KEEP_MASK_ENERGY; }
             });
         }
         if let Some(ref dm) = drop_mask {
-            Zip::from(&mut aux).and(dm).apply(|a, &m| {
+            Zip::from(&mut aux).and(dm).for_each(|a, &m| {
                 if m { *a -= DROP_MASK_ENERGY; }
             });
         }
@@ -604,9 +774,8 @@ fn seamcarve_resize(
 
     let mut out = src.clone();
 
-    // If we have a drop mask, remove the object first by repeatedly removing seams that have negative energy
+    // Object removal with drop mask
     if let Some(ref mut aux) = aux_energy {
-        // If there's negativity in aux, it means we want to remove those pixels:
         fn max_negative_seam_per_row(aux: &Array2<f32>) -> usize {
             let (h, w) = aux.dim();
             let mut max = 0usize;
@@ -625,17 +794,9 @@ fn seamcarve_resize(
         }
 
         let is_object = |aux: &Array2<f32>| {
-            let mut any_neg = false;
-            for v in aux.iter() {
-                if *v < 0.0 {
-                    any_neg = true;
-                    break;
-                }
-            }
-            any_neg
+            aux.iter().any(|&v| v < 0.0)
         };
 
-        // If user wants "height-first" removal of the object, transpose first
         if order == "height-first" && is_object(aux) {
             out = transpose_3d(&out);
             *aux = transpose_2d(aux);
@@ -644,26 +805,20 @@ fn seamcarve_resize(
         let mut neg_count = max_negative_seam_per_row(aux);
         while neg_count > 0 {
             out = reduce_width(&out, neg_count, energy_mode, &mut Some(aux.clone()));
-            let new_aux = rgb_to_gray_for_aux(&out); // We'll rebuild a fresh 2D array
-            // Re-pack the keep/drop from the old aux as best we can
-            // *This step is simplified.* Ideally, you'd track the removed columns carefully.
-            // For demonstration, we’ll skip reapplying old negativity.
-            // (A more complete approach retains the old columns via an index map.)
+            let new_aux = rgb_to_gray_for_aux(&out);
             *aux = new_aux;
             neg_count = max_negative_seam_per_row(aux);
         }
 
         if order == "height-first" {
-            // transpose back
             out = transpose_3d(&out);
             *aux = transpose_2d(aux);
         }
     }
 
-    // Finally, if size is specified, do the seam-based resizing
+    // Resize to target dimensions
     if let (Some(dw), Some(dh)) = (width, height) {
         if order == "width-first" {
-            // width first
             out = resize_width(&out, dw, energy_mode, &mut aux_energy, step_ratio);
             out = resize_height(&out, dh, energy_mode, &mut aux_energy, step_ratio);
         } else {
@@ -675,7 +830,7 @@ fn seamcarve_resize(
     out
 }
 
-/// Helper: Transpose a 2D array
+/// Transpose a 2D array.
 fn transpose_2d(arr: &Array2<f32>) -> Array2<f32> {
     let (h, w) = arr.dim();
     let mut out = Array2::<f32>::zeros((w, h));
@@ -687,44 +842,94 @@ fn transpose_2d(arr: &Array2<f32>) -> Array2<f32> {
     out
 }
 
-/// Helper: Rebuild a 2D "gray" array from a 3D color image for the aux array scenario.
-/// This is a placeholder for a more careful approach that tracks columns removed so far.
+/// Placeholder for auxiliary energy tracking after object removal.
 fn rgb_to_gray_for_aux(_img: &Array3<f32>) -> Array2<f32> {
-    // Placeholder. In a real scenario, you'd track an index map from the original.
-    // For demonstration, this just returns an empty array with shape (0, 0).
     Array2::<f32>::zeros((0, 0))
 }
 
-fn main() {
-    let cli = Cli::parse();
-    // 1. Load input image
-    let input_img = image::open(&cli.input).expect("Failed to open input image");
-    let arr = image_to_ndarray(&input_img);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // 2. Optionally load keep/drop masks (must match dimension)
-    let keep_mask = cli.keep_mask.as_ref().map(|path| {
-        let km_img = image::open(path).expect("Failed to open keep_mask image");
-        image_to_bool_mask(&km_img)
-    });
-    let drop_mask = cli.drop_mask.as_ref().map(|path| {
-        let dm_img = image::open(path).expect("Failed to open drop_mask image");
-        image_to_bool_mask(&dm_img)
-    });
+    #[test]
+    fn test_resize_same_dimensions() {
+        let img = Array3::<f32>::ones((10, 10, 3));
+        let config = ResizeConfig {
+            width: Some(10),
+            height: Some(10),
+            ..Default::default()
+        };
+        let result = resize(img.clone(), config).unwrap();
+        assert_eq!(result.dim(), (10, 10, 3));
+    }
 
-    // 3. Do the seam carving
-    let carved = seamcarve_resize(
-        &arr,
-        cli.width,
-        cli.height,
-        &cli.energy_mode,
-        &cli.order,
-        keep_mask,
-        drop_mask,
-        cli.step_ratio
-    );
+    #[test]
+    fn test_invalid_dimensions() {
+        let img = Array3::<f32>::zeros((0, 10, 3));
+        let config = ResizeConfig::default();
+        assert!(resize(img, config).is_err());
+    }
 
-    // 4. Save result
-    let out_img = ndarray_to_rgb_image(&carved);
-    out_img.save(&cli.output).expect("Failed to save output");
-    println!("Seam carving complete. Saved to {}", &cli.output);
+    #[test]
+    fn test_invalid_step_ratio() {
+        let img = Array3::<f32>::ones((10, 10, 3));
+        let config = ResizeConfig {
+            step_ratio: 0.0,
+            ..Default::default()
+        };
+        assert!(resize(img.clone(), config).is_err());
+
+        let config2 = ResizeConfig {
+            step_ratio: 1.5,
+            ..Default::default()
+        };
+        assert!(resize(img, config2).is_err());
+    }
+
+    #[test]
+    fn test_mask_size_mismatch() {
+        let img = Array3::<f32>::ones((10, 10, 3));
+        let wrong_mask = Array2::<bool>::default((5, 5));
+        let config = ResizeConfig {
+            keep_mask: Some(wrong_mask),
+            ..Default::default()
+        };
+        assert!(resize(img, config).is_err());
+    }
+
+    #[test]
+    fn test_rgb_to_gray() {
+        let mut img = Array3::<f32>::zeros((2, 2, 3));
+        img[[0, 0, 0]] = 100.0; // R
+        img[[0, 0, 1]] = 100.0; // G
+        img[[0, 0, 2]] = 100.0; // B
+
+        let gray = rgb_to_gray(&img);
+        assert_eq!(gray.dim(), (2, 2));
+        // Weighted sum: 0.2125*100 + 0.7154*100 + 0.0721*100 = 100
+        assert!((gray[[0, 0]] - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_transpose_3d() {
+        let img = Array3::<f32>::from_shape_fn((3, 4, 2), |(y, x, c)| {
+            (y * 100 + x * 10 + c) as f32
+        });
+        let transposed = transpose_3d(&img);
+        assert_eq!(transposed.dim(), (4, 3, 2));
+        assert_eq!(transposed[[0, 0, 0]], img[[0, 0, 0]]);
+        assert_eq!(transposed[[1, 2, 1]], img[[2, 1, 1]]);
+    }
+
+    #[test]
+    fn test_energy_backward() {
+        let gray = Array2::<f32>::from_shape_fn((3, 3), |(_y, x)| {
+            if x == 1 { 255.0 } else { 0.0 }
+        });
+        let energy = get_energy_backward(&gray);
+        // Edges between columns should have high energy
+        // The leftmost and rightmost columns neighbor the bright middle column
+        assert!(energy[[1, 0]] > energy[[1, 1]]);
+        assert!(energy[[1, 2]] > energy[[1, 1]]);
+    }
 }
